@@ -1,0 +1,52 @@
+# India Site Feasibility Pipeline — Dependencies
+# ─────────────────────────────────────────────────────────────────────────────
+# RECOMMENDED: Python 3.11 or 3.12 on Windows
+# Python 3.13 has LIMITED wheel support — many geospatial libs won't build from source
+#
+# INSTALL STEPS (Windows):
+#   1. pip install -r requirements.txt
+#   2. If rasterio/fiona/GDAL fail: install from Christoph Gohlke's wheels:
+#      https://github.com/cgohlke/geospatial-wheels/releases
+#      → Download GDAL, Fiona, rasterio wheels matching your Python version
+#      → pip install GDAL‑*.whl Fiona‑*.whl rasterio‑*.whl
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Core geospatial ───────────────────────────────────────────────────────────
+geopandas>=1.0.0
+shapely>=2.0.0
+pyproj>=3.6.0
+fiona>=1.9.0
+h3>=4.0.0                      # pure Python wheels — installs cleanly on all platforms
+
+# ── Raster processing ─────────────────────────────────────────────────────────
+rasterio>=1.3.0                # if fails on Win: use Gohlke wheel (see above)
+rasterstats>=0.20.0
+
+# ── OSM data parsing ──────────────────────────────────────────────────────────
+# pyrosm REMOVED — broken on Python 3.13 + Windows (Cython/pyrobuf build failure)
+# Replaced with osmium (pyosmium) — has prebuilt Windows wheels on PyPI
+osmium>=3.7.0                  # pip install osmium  → works on Python 3.10-3.13
+osmnx>=2.0.0                   # road network graphs — prebuilt wheels
+
+# ── Data processing ───────────────────────────────────────────────────────────
+pandas>=2.0.0
+numpy>=1.26.0
+scipy>=1.11.0
+scikit-learn>=1.3.0
+
+# ── File I/O ──────────────────────────────────────────────────────────────────
+pyarrow>=14.0.0
+openpyxl>=3.1.0
+fastparquet>=2023.10.0
+
+# ── HTTP / API ────────────────────────────────────────────────────────────────
+requests>=2.31.0
+urllib3>=2.0.0
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+tqdm>=4.66.0
+python-dotenv>=1.0.0
+
+# ── Optional — large-scale processing ────────────────────────────────────────
+# dask[dataframe]>=2024.1.0
+# dask-geopandas>=0.3.0
