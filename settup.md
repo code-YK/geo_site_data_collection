@@ -9,14 +9,14 @@ Replace the repository URL with your actual repo.
 ### HTTPS
 
 ```bash
-git clone https://github.com/your-org/geo_site_data_collection.git
+git clone https://github.com/code-YK/geo_site_data_collection.git
 cd geo_site_data_collection
 ```
 
 ### SSH
 
 ```bash
-git clone git@github.com:your-org/geo_site_data_collection.git
+git clone git@github.com:code-YK/geo_site_data_collection.git
 cd geo_site_data_collection
 ```
 
