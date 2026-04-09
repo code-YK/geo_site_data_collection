@@ -1,0 +1,224 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+.wrap{padding:1rem 0}
+.layer{margin-bottom:1.5rem}
+.layer-header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.badge{font-size:11px;font-weight:500;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.layer-title{font-size:13px;font-weight:500;color:var(--color-text-secondary)}
+.source{font-size:11px;color:var(--color-text-tertiary);margin-left:auto}
+.cols{display:flex;flex-wrap:wrap;gap:6px}
+.col{font-size:12px;font-family:var(--font-mono);padding:4px 9px;border-radius:var(--border-radius-md);border:0.5px solid;white-space:nowrap}
+.divider{height:0.5px;background:var(--color-border-tertiary);margin:1.5rem 0}
+.total{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--color-background-secondary);border-radius:var(--border-radius-lg);border:0.5px solid var(--color-border-tertiary)}
+.total-num{font-size:28px;font-weight:500;color:var(--color-text-primary)}
+.total-label{font-size:13px;color:var(--color-text-secondary)}
+
+.l0{background:#F1EFE8;border-color:#B4B2A9;color:#444441}
+.l0b{background:#F1EFE8;border-color:#B4B2A9;color:#5F5E5A}
+.l1{background:#E6F1FB;border-color:#85B7EB;color:#0C447C}
+.l1b{background:#E6F1FB;border-color:#85B7EB;color:#185FA5}
+.l2{background:#EEEDFE;border-color:#AFA9EC;color:#3C3489}
+.l2b{background:#EEEDFE;border-color:#AFA9EC;color:#534AB7}
+.l3{background:#E1F5EE;border-color:#5DCAA5;color:#085041}
+.l3b{background:#E1F5EE;border-color:#5DCAA5;color:#0F6E56}
+.l4{background:#FAEEDA;border-color:#EF9F27;color:#633806}
+.l4b{background:#FAEEDA;border-color:#EF9F27;color:#854F0B}
+.l5{background:#FCEBEB;border-color:#F09595;color:#791F1F}
+.l5b{background:#FCEBEB;border-color:#F09595;color:#A32D2D}
+.l6{background:#FBEAF0;border-color:#ED93B1;color:#72243E}
+.l6b{background:#FBEAF0;border-color:#ED93B1;color:#993556}
+.l7{background:#EAF3DE;border-color:#97C459;color:#27500A}
+.l7b{background:#EAF3DE;border-color:#97C459;color:#3B6D11}
+.l8{background:#1D9E75;border-color:#0F6E56;color:#E1F5EE}
+.l8col{background:#0F6E56;border-color:#085041;color:#9FE1CB;font-weight:500}
+</style>
+<div class="wrap">
+
+<div class="layer">
+  <div class="layer-header">
+    <span class="badge l0">Layer 0</span>
+    <span class="layer-title">Basic identifiers</span>
+    <span class="source">Generated / GADM / H3</span>
+  </div>
+  <div class="cols">
+    <span class="col l0b">id</span>
+    <span class="col l0b">latitude</span>
+    <span class="col l0b">longitude</span>
+    <span class="col l0b">state</span>
+    <span class="col l0b">district</span>
+    <span class="col l0b">area_name</span>
+    <span class="col l0b">grid_id</span>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="layer-header">
+    <span class="badge l1">Layer 1</span>
+    <span class="layer-title">Demographics</span>
+    <span class="source">WorldPop · Census 2011 · VIIRS</span>
+  </div>
+  <div class="cols">
+    <span class="col l1b">population_1km</span>
+    <span class="col l1b">population_5km</span>
+    <span class="col l1b">population_density</span>
+    <span class="col l1b">male_population</span>
+    <span class="col l1b">female_population</span>
+    <span class="col l1b">sex_ratio</span>
+    <span class="col l1b">child_population</span>
+    <span class="col l1b">working_age_population</span>
+    <span class="col l1b">elderly_population</span>
+    <span class="col l1b">child_ratio</span>
+    <span class="col l1b">working_age_ratio</span>
+    <span class="col l1b">dependency_ratio</span>
+    <span class="col l1b">household_count</span>
+    <span class="col l1b">literacy_rate</span>
+    <span class="col l1b">income_level</span>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="layer-header">
+    <span class="badge l2">Layer 2</span>
+    <span class="layer-title">Transportation</span>
+    <span class="source">OSM · OSRM</span>
+  </div>
+  <div class="cols">
+    <span class="col l2b">road_density</span>
+    <span class="col l2b">distance_to_highway</span>
+    <span class="col l2b">intersection_density</span>
+    <span class="col l2b">connectivity_score</span>
+    <span class="col l2b">avg_travel_time_10min</span>
+    <span class="col l2b">avg_travel_time_20min</span>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="layer-header">
+    <span class="badge l3">Layer 3</span>
+    <span class="layer-title">POI / Economic activity</span>
+    <span class="source">OSM</span>
+  </div>
+  <div class="cols">
+    <span class="col l3b">poi_count_500m</span>
+    <span class="col l3b">poi_count_1km</span>
+    <span class="col l3b">poi_count_2km</span>
+    <span class="col l3b">competitor_count</span>
+    <span class="col l3b">complementary_business_count</span>
+    <span class="col l3b">restaurant_count</span>
+    <span class="col l3b">shop_count</span>
+    <span class="col l3b">hospital_count</span>
+    <span class="col l3b">school_count</span>
+    <span class="col l3b">bank_count</span>
+    <span class="col l3b">poi_diversity_score</span>
+    <span class="col l3b">footfall_proxy_score</span>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="layer-header">
+    <span class="badge l4">Layer 4</span>
+    <span class="layer-title">Land use + buildings</span>
+    <span class="source">OSM</span>
+  </div>
+  <div class="cols">
+    <span class="col l4b">commercial_ratio</span>
+    <span class="col l4b">residential_ratio</span>
+    <span class="col l4b">industrial_ratio</span>
+    <span class="col l4b">mixed_use_ratio</span>
+    <span class="col l4b">building_count</span>
+    <span class="col l4b">building_density</span>
+    <span class="col l4b">avg_building_levels</span>
+    <span class="col l4b">built_up_area_ratio</span>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="layer-header">
+    <span class="badge l5">Layer 5</span>
+    <span class="layer-title">Environment / risk</span>
+    <span class="source">OpenAQ · GDACS · OSM · NASA POWER</span>
+  </div>
+  <div class="cols">
+    <span class="col l5b">aqi</span>
+    <span class="col l5b">pm25</span>
+    <span class="col l5b">pm10</span>
+    <span class="col l5b">flood_risk_score</span>
+    <span class="col l5b">earthquake_risk_score</span>
+    <span class="col l5b">green_space_ratio</span>
+    <span class="col l5b">temperature</span>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="layer-header">
+    <span class="badge l6">Layer 6</span>
+    <span class="layer-title">Infrastructure</span>
+    <span class="source">OSM</span>
+  </div>
+  <div class="cols">
+    <span class="col l6b">distance_to_power_substation</span>
+    <span class="col l6b">power_line_density</span>
+    <span class="col l6b">electricity_access_score</span>
+    <span class="col l6b">distance_to_water_source</span>
+    <span class="col l6b">water_body_proximity</span>
+    <span class="col l6b">water_availability_score</span>
+    <span class="col l6b">distance_to_bus_stop</span>
+    <span class="col l6b">distance_to_railway_station</span>
+    <span class="col l6b">public_transport_score</span>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="layer-header">
+    <span class="badge l7">Layer 7</span>
+    <span class="layer-title">Derived scores</span>
+    <span class="source">Computed (0–100)</span>
+  </div>
+  <div class="cols">
+    <span class="col l7b">demand_score</span>
+    <span class="col l7b">accessibility_score</span>
+    <span class="col l7b">competition_score</span>
+    <span class="col l7b">suitability_score</span>
+    <span class="col l7b">risk_score</span>
+    <span class="col l7b">infrastructure_score</span>
+  </div>
+</div>
+
+<div class="layer">
+  <div class="layer-header">
+    <span class="badge l8">Layer 8</span>
+    <span class="layer-title">Final output</span>
+    <span class="source">Weighted composite</span>
+  </div>
+  <div class="cols">
+    <span class="col l8col">site_readiness_score</span>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<div class="total">
+  <div>
+    <div class="total-num">71</div>
+    <div class="total-label">total columns per row</div>
+  </div>
+  <div style="width:0.5px;height:40px;background:var(--color-border-tertiary)"></div>
+  <div>
+    <div class="total-num">~650K</div>
+    <div class="total-label">rows (H3 cells, all India)</div>
+  </div>
+  <div style="width:0.5px;height:40px;background:var(--color-border-tertiary)"></div>
+  <div>
+    <div class="total-num">9</div>
+    <div class="total-label">data layers</div>
+  </div>
+  <div style="width:0.5px;height:40px;background:var(--color-border-tertiary)"></div>
+  <div>
+    <div class="total-num">6</div>
+    <div class="total-label">data sources</div>
+  </div>
+</div>
+
+</div>
