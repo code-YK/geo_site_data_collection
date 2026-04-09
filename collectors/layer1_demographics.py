@@ -3,22 +3,24 @@ collectors/layer1_demographics.py
 Collects ALL demographic columns from the dataset spec.
 
 Sources:
-  - WorldPop 100m raster  → population counts (1km / 5km rings, density)
+  - WorldPop 1km raster   → population counts (1km / 5km rings, density)
   - Census of India 2011  → sex ratio, age groups, literacy, household count
   - Income proxy          → nighttime lights (VIIRS) as income-level surrogate
 
 Required data downloads (run once):
-  1. WorldPop raster:
-     wget https://data.worldpop.org/GIS/Population/Global_2000_2020_Constrained/2020/BSGM/IND/ind_ppp_2020_UNadj_constrained.tif \
-          -P data/raw/worldpop/
+  1. WorldPop raster — NO LOGIN, paste directly in browser:
+     https://data.worldpop.org/GIS/Population_Density/Global_2000_2020_1km/2020/IND/ind_pd_2020_1km.tif
+     Save as: data/raw/worldpop/ind_pd_2020_1km.tif
 
-  2. Census district data:
-     Download "Primary Census Abstract" Excel from:
-     https://censusindia.gov.in/nada/index.php/catalog/42
+  2. Census district data — NO LOGIN:
+     https://censusindia.gov.in/census.website/en/data/tables
+     Download "Primary Census Abstract Data Tables — District Level (Excel)"
      Save as: data/raw/census/primary_census_abstract_2011.xlsx
 
-  3. VIIRS nighttime lights (income proxy):
-     https://eogdata.mines.edu/products/vnl/  (annual composite, India bbox)
+  3. VIIRS nighttime lights (income proxy) — FREE REGISTRATION (instant):
+     https://eogdata.mines.edu/products/vnl/
+     OR no-login alternative (NASA Black Marble):
+     https://blackmarble.gsfc.nasa.gov/
      Save as: data/raw/viirs/india_viirs_2022.tif
 
 Dependencies:
@@ -41,7 +43,7 @@ from config.settings import BUFFER_1KM, BUFFER_5KM
 logger = logging.getLogger(__name__)
 
 # ── File paths ────────────────────────────────────────────────────────────────
-WORLDPOP_RASTER  = Path("data/raw/worldpop/ind_ppp_2020_UNadj_constrained.tif")
+WORLDPOP_RASTER  = Path("data/raw/worldpop/ind_pd_2020_1km.tif")
 CENSUS_XLSX      = Path("data/raw/census/primary_census_abstract_2011.xlsx")
 VIIRS_RASTER     = Path("data/raw/viirs/india_viirs_2022.tif")
 
@@ -60,8 +62,9 @@ def extract_worldpop(grid_gdf: gpd.GeoDataFrame) -> pd.DataFrame:
     if not WORLDPOP_RASTER.exists():
         raise FileNotFoundError(
             f"WorldPop raster not found at {WORLDPOP_RASTER}.\n"
-            "Download from https://data.worldpop.org/GIS/Population/"
-            "Global_2000_2020_Constrained/2020/BSGM/IND/"
+            "Download (no login needed) — paste in browser:\n"
+            "https://data.worldpop.org/GIS/Population_Density/Global_2000_2020_1km/2020/IND/ind_pd_2020_1km.tif\n"
+            "Save as: data/raw/worldpop/ind_pd_2020_1km.tif"
         )
 
     # Project to metric CRS for accurate buffer distances

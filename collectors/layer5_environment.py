@@ -3,17 +3,18 @@ collectors/layer5_environment.py
 Collects ALL environment / risk columns from the dataset spec.
 
 Sources:
-  - OpenAQ v3 API         → aqi, pm25, pm10 (latest station readings + interpolation)
-  - NDMA / BHUVAN raster  → flood_risk_score, earthquake_risk_score
-  - OSM / BHUVAN          → green_space_ratio
-  - NASA POWER API        → temperature (climatological average)
+  - OpenAQ v3 API    → aqi, pm25, pm10
+  - GDACS API        → flood_risk_score, earthquake_risk_score  ← NO LOGIN, NO FILE DOWNLOAD
+  - OSM (via cache)  → green_space_ratio
+  - NASA POWER API   → temperature
+
+GDACS (Global Disaster Alert and Coordination System) is run by the UN +
+European Commission. Free REST API, no key, no registration.
+Install: pip install gdacs-api
 
 Columns produced:
   aqi, pm25, pm10, flood_risk_score, earthquake_risk_score,
   green_space_ratio, temperature
-
-Dependencies:
-    pip install requests geopandas pandas numpy rasterio rasterstats scipy
 """
 
 import logging
@@ -26,21 +27,19 @@ import numpy as np
 import pandas as pd
 import requests
 from scipy.interpolate import griddata
+from shapely.geometry import Point
 
-from config.settings import BUFFER_1KM, BUFFER_2KM, SOURCES
-from utils.osm_reader import get_landuse
+from config.settings import BUFFER_1KM, SOURCES
 
 logger = logging.getLogger(__name__)
 
 OPENAQ_KEY  = os.getenv(SOURCES["openaq"]["api_key_env"], "")
 OPENAQ_BASE = SOURCES["openaq"]["endpoint"]
 NASA_POWER  = SOURCES["nasa_power"]["endpoint"]
+GDACS_CFG   = SOURCES["gdacs"]
 
-# Raster paths (download separately — see docstring)
-FLOOD_RASTER      = Path("data/raw/risk/india_flood_hazard.tif")
-EARTHQUAKE_RASTER = Path("data/raw/risk/india_seismic_zone.tif")
-# Green space raster from BHUVAN (vegetation / parks layer)
-BHUVAN_VEG_RASTER = Path("data/raw/bhuvan/india_vegetation.tif")
+# India bounding box for GDACS queries
+INDIA_BBOX = SOURCES.get("gdacs", {}).get("india_bbox", "6.5,68.1,37.6,97.4")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -50,10 +49,8 @@ BHUVAN_VEG_RASTER = Path("data/raw/bhuvan/india_vegetation.tif")
 def fetch_openaq_stations(country: str = "IN") -> pd.DataFrame:
     """
     Fetch all OpenAQ stations in India with latest PM2.5, PM10 readings.
-    Free API key: https://openaq.org/#/register
+    Free API key: https://openaq.org/register  (instant after email confirm)
     Rate limit: 60 req/min (free tier).
-
-    Returns DataFrame: [station_id, lat, lon, pm25, pm10, aqi_estimate]
     """
     cache = Path("data/interim/openaq_stations_india.parquet")
     if cache.exists():
@@ -96,8 +93,6 @@ def fetch_openaq_stations(country: str = "IN") -> pd.DataFrame:
     df["pm25"] = pd.to_numeric(df["pm25"], errors="coerce")
     df["pm10"] = pd.to_numeric(df["pm10"], errors="coerce")
 
-    # AQI estimate (India NAQI formula — simplified linear for PM2.5)
-    # Full formula: https://cpcb.nic.in/displaypdf.php?id=bmFxaS1yZXBvcnQucGRm
     def pm25_to_aqi(pm):
         if pd.isna(pm):
             return np.nan
@@ -121,9 +116,7 @@ def fetch_openaq_stations(country: str = "IN") -> pd.DataFrame:
 def interpolate_aq_to_grid(
     grid_gdf: gpd.GeoDataFrame, station_df: pd.DataFrame
 ) -> pd.DataFrame:
-    """
-    Inverse-distance weighted (IDW) interpolation of station AQ values to grid centroids.
-    """
+    """IDW interpolation of station AQ values to grid centroids."""
     if station_df.empty or station_df[["pm25", "pm10"]].isna().all().all():
         return pd.DataFrame({
             "id": grid_gdf["id"], "pm25": np.nan,
@@ -138,8 +131,7 @@ def interpolate_aq_to_grid(
     for col, out_col in [("pm25", "pm25"), ("pm10", "pm10"), ("aqi_estimate", "aqi")]:
         vals = stations[col].fillna(stations[col].median())
         interpolated = griddata(stn_pts, vals.values, grid_pts, method="linear", fill_value=np.nan)
-        # Fallback: nearest for cells outside convex hull
-        nearest = griddata(stn_pts, vals.values, grid_pts, method="nearest")
+        nearest      = griddata(stn_pts, vals.values, grid_pts, method="nearest")
         mask = np.isnan(interpolated)
         interpolated[mask] = nearest[mask]
         result[out_col] = interpolated.round(2)
@@ -148,113 +140,208 @@ def interpolate_aq_to_grid(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. FLOOD RISK — from NDMA raster or BHUVAN flood hazard atlas
+# 2. DISASTER RISK — GDACS API (flood + earthquake)
+#    No login. No file download. Free UN/EC API.
+#    pip install gdacs-api
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _fetch_gdacs_events(event_type: str, page_size: int = 100) -> pd.DataFrame:
+    """
+    Fetch all historical GDACS events of a given type within India's bounding box.
+    Paginates automatically (API returns max 100 per page).
+
+    event_type: "FL" = flood, "EQ" = earthquake, "TC" = cyclone,
+                "WF" = wildfire, "DR" = drought
+    Returns DataFrame with columns: [eventid, lat, lon, alertlevel, severity, fromdate]
+    """
+    cache = Path(f"data/interim/gdacs_{event_type.lower()}_india.parquet")
+    if cache.exists():
+        age_days = (time.time() - cache.stat().st_mtime) / 86400
+        if age_days < 7:
+            logger.info(f"Using cached GDACS {event_type} events ({age_days:.1f} days old)")
+            return pd.read_parquet(cache)
+
+    base_url = GDACS_CFG["endpoint"]
+    min_lat, min_lon, max_lat, max_lon = INDIA_BBOX.split(",")
+
+    all_records = []
+    page = 1
+
+    logger.info(f"Fetching GDACS {event_type} events for India (paginating) ...")
+    while True:
+        params = {
+            "eventtype":  event_type,
+            "fromdate":   "2000-01-01",
+            "todate":     "2025-12-31",
+            "bbox":       f"{min_lon},{min_lat},{max_lon},{max_lat}",
+            "pagesize":   page_size,
+            "pagenumber": page,
+        }
+        try:
+            resp = requests.get(base_url, params=params, timeout=60)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            logger.warning(f"GDACS {event_type} page {page} failed: {e}")
+            break
+
+        features = data.get("features", [])
+        if not features:
+            break
+
+        for feat in features:
+            props = feat.get("properties", {})
+            geom  = feat.get("geometry", {})
+            coords = geom.get("coordinates", [None, None])
+            all_records.append({
+                "eventid":    props.get("eventid"),
+                "event_type": event_type,
+                "lon":        coords[0],
+                "lat":        coords[1],
+                "alertlevel": props.get("alertlevel", "Green"),
+                "severity":   props.get("severitydata", {}).get("severity", 0),
+                "fromdate":   props.get("fromdate"),
+            })
+
+        logger.info(f"  GDACS {event_type}: page {page}, {len(features)} events")
+        if len(features) < page_size:
+            break
+        page += 1
+        time.sleep(0.3)
+
+    df = pd.DataFrame(all_records)
+    if df.empty:
+        logger.warning(f"No GDACS {event_type} events found for India bbox.")
+        return df
+
+    df["severity"] = pd.to_numeric(df["severity"], errors="coerce").fillna(0)
+    df["alert_weight"] = df["alertlevel"].map({"Green": 1, "Orange": 3, "Red": 5}).fillna(1)
+
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(cache)
+    logger.info(f"GDACS {event_type}: {len(df)} total events cached → {cache}")
+    return df
+
+
+def _gdacs_events_to_grid_score(
+    grid_gdf: gpd.GeoDataFrame,
+    events_df: pd.DataFrame,
+    radius_m: float = 50_000,
+    col_name: str = "risk_score",
+) -> pd.Series:
+    """
+    For each H3 cell: count weighted GDACS events within radius_m metres.
+    Weight = alert_weight (Red=5, Orange=3, Green=1) × severity.
+    Normalise result to 0–1.
+
+    radius_m = 50km default — captures district-level disaster footprint.
+    """
+    if events_df.empty or events_df[["lat", "lon"]].isna().all().all():
+        logger.warning(f"No events data for {col_name}. Returning 0.")
+        return pd.Series(0.0, index=grid_gdf["id"], name=col_name)
+
+    events_clean = events_df.dropna(subset=["lat", "lon"]).copy()
+    events_gdf = gpd.GeoDataFrame(
+        events_clean,
+        geometry=gpd.points_from_xy(events_clean["lon"], events_clean["lat"]),
+        crs="EPSG:4326",
+    ).to_crs("EPSG:32644")
+
+    grid_m = grid_gdf[["id", "geometry"]].to_crs("EPSG:32644")
+    buffers = grid_m.copy()
+    buffers["geometry"] = grid_m.geometry.centroid.buffer(radius_m)
+    buffers = buffers.to_crs("EPSG:4326")
+    events_gdf = events_gdf.to_crs("EPSG:4326")
+
+    joined = gpd.sjoin(
+        events_gdf[["alert_weight", "severity", "geometry"]],
+        buffers[["id", "geometry"]],
+        how="inner", predicate="within",
+    )
+    joined["weighted"] = joined["alert_weight"] * joined["severity"].clip(lower=1)
+    agg = joined.groupby("id")["weighted"].sum()
+
+    score = grid_gdf["id"].map(agg).fillna(0)
+    max_s = score.max()
+    if max_s > 0:
+        score = score / max_s
+    return score.round(4).rename(col_name)
+
 
 def compute_flood_risk(grid_gdf: gpd.GeoDataFrame) -> pd.Series:
     """
-    Extract mean flood hazard score within each H3 cell from raster.
-    Returns 0–1 score (0 = safe, 1 = high risk).
-
-    Download:
-        Flood Hazard Atlas of India (NDMA):
-        https://ndma.gov.in/Resources/ndma-pdf/maps/Flood_Hazard_Atlas.pdf
-        For raster: BHUVAN WMS layer "Flood_Hazard"
-        https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms?SERVICE=WMS&VERSION=1.1.1&
-            REQUEST=GetMap&LAYERS=india_flood_hazard&BBOX=...
-
-    Seismic zone raster:
-        NDMA Seismic Zonation Map → digitise as raster or download from:
-        https://bhukosh.gsi.gov.in  (GSI Bhukosh portal — seismic zonation layer)
+    Flood risk score (0–1) from GDACS historical flood events.
+    Source: GDACS FL events within 50km of each H3 cell, weighted by alert level.
+    No login. No file download. Fully API-driven.
     """
-    from rasterstats import zonal_stats
-
-    if not FLOOD_RASTER.exists():
-        logger.warning(
-            f"Flood raster not found at {FLOOD_RASTER}. flood_risk_score will be NaN.\n"
-            "Download BHUVAN flood hazard layer or NDMA atlas raster."
-        )
-        return pd.Series(np.nan, index=grid_gdf["id"], name="flood_risk_score")
-
-    stats = zonal_stats(grid_gdf, str(FLOOD_RASTER), stats=["mean"], nodata=0)
-    scores = np.array([s["mean"] or 0 for s in stats])
-    max_s  = scores.max()
-    if max_s > 0:
-        scores = scores / max_s
-    return pd.Series(scores.round(3), index=grid_gdf["id"], name="flood_risk_score")
+    logger.info("Computing flood risk from GDACS FL events ...")
+    events = _fetch_gdacs_events("FL")
+    return _gdacs_events_to_grid_score(grid_gdf, events, col_name="flood_risk_score")
 
 
 def compute_earthquake_risk(grid_gdf: gpd.GeoDataFrame) -> pd.Series:
     """
-    Extract seismic zone value within each H3 cell.
-    India zones: II (low), III (moderate), IV (high), V (very high).
-    Normalised to 0–1.
-
-    Download raster from GSI Bhukosh: https://bhukosh.gsi.gov.in
+    Earthquake risk score (0–1) from GDACS historical earthquake events.
+    Source: GDACS EQ events within 50km of each H3 cell, weighted by alert level.
+    No login. No file download. Fully API-driven.
     """
-    from rasterstats import zonal_stats
-
-    if not EARTHQUAKE_RASTER.exists():
-        logger.warning(
-            f"Earthquake raster not found at {EARTHQUAKE_RASTER}. earthquake_risk_score = NaN.\n"
-            "Download seismic zone raster from GSI Bhukosh (bhukosh.gsi.gov.in)."
-        )
-        return pd.Series(np.nan, index=grid_gdf["id"], name="earthquake_risk_score")
-
-    # Zone values 2–5 → normalise to 0–1
-    stats  = zonal_stats(grid_gdf, str(EARTHQUAKE_RASTER), stats=["mean"], nodata=0)
-    zones  = np.array([s["mean"] or 2 for s in stats])
-    scores = (zones - 2) / 3  # Zone II=0.0, III=0.33, IV=0.67, V=1.0
-    return pd.Series(scores.clip(0, 1).round(3), index=grid_gdf["id"], name="earthquake_risk_score")
+    logger.info("Computing earthquake risk from GDACS EQ events ...")
+    events = _fetch_gdacs_events("EQ")
+    return _gdacs_events_to_grid_score(grid_gdf, events, col_name="earthquake_risk_score")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. GREEN SPACE RATIO — parks + vegetation within H3 cell
+# 3. GREEN SPACE RATIO — OSM parks + vegetation within H3 cell
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_green_space_ratio(grid_gdf: gpd.GeoDataFrame) -> pd.Series:
     """
     Fraction of H3 cell covered by parks / vegetation / forest.
-    Uses OSM leisure=park / landuse=forest layers or BHUVAN vegetation raster.
+    Uses OSM leisure=park / landuse=forest via osm_reader (already cached from Layer 4).
     """
+    from utils.osm_reader import get_features
+
     try:
-        lu = get_landuse()
-        if lu is None or lu.empty:
-            green = gpd.GeoDataFrame()
-        else:
-            wanted = {"park", "nature_reserve", "garden", "forest", "grass", "meadow", "orchard"}
-            green = lu[lu["landuse"].isin(wanted)].copy() if "landuse" in lu.columns else gpd.GeoDataFrame()
+        green = get_features(
+            tag_filters={
+                "leisure": ["park", "nature_reserve", "garden", "recreation_ground"],
+                "landuse": ["forest", "grass", "meadow", "orchard", "greenfield"],
+                "natural": ["wood", "scrub", "heath"],
+            },
+            cache_name="greenspace",
+            include_ways=True,
+        )
     except Exception as e:
         logger.warning(f"Green space extraction failed: {e}")
-        green = gpd.GeoDataFrame()
+        return pd.Series(0.0, index=grid_gdf["id"], name="green_space_ratio")
 
     if green.empty:
-        logger.warning("No green space data. green_space_ratio = 0.")
         return pd.Series(0.0, index=grid_gdf["id"], name="green_space_ratio")
 
     grid_m  = grid_gdf[["id", "geometry"]].to_crs("EPSG:32644")
     green_m = green.to_crs("EPSG:32644")
-    cell_area = grid_m.set_index("id").geometry.area
+    buffers = grid_m.copy()
+    buffers["geometry"] = grid_m.geometry.centroid.buffer(BUFFER_1KM)
+    buffers = buffers.to_crs("EPSG:4326")
 
-    clipped = gpd.overlay(green_m[["geometry"]], grid_m[["id", "geometry"]],
-                          how="intersection", keep_geom_type=False)
-    clipped["green_area"] = clipped.geometry.area
-    green_per_cell = clipped.groupby("id")["green_area"].sum()
-
-    ratio = (green_per_cell / cell_area).clip(0, 1).fillna(0).round(4)
-    return grid_gdf["id"].map(ratio).fillna(0).rename("green_space_ratio")
+    joined = gpd.sjoin(
+        green_m[["geometry"]].to_crs("EPSG:4326"),
+        buffers[["id", "geometry"]], how="inner", predicate="within"
+    )
+    counts = joined.groupby("id").size()
+    ratio  = (grid_gdf["id"].map(counts).fillna(0) / 20).clip(0, 0.5).round(4)
+    return ratio.rename("green_space_ratio")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. TEMPERATURE — NASA POWER climatological average (2m air temperature)
+# 4. TEMPERATURE — NASA POWER climatological average (2m air temp)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def fetch_nasa_temperature(grid_gdf: gpd.GeoDataFrame, batch_size: int = 200) -> pd.Series:
+def fetch_nasa_temperature(grid_gdf: gpd.GeoDataFrame) -> pd.Series:
     """
-    Fetches 20-year climatological mean 2m temperature (°C) from NASA POWER API.
-    Batched by unique 0.5° grid tiles (NASA POWER is 0.5° resolution).
-
-    NASA POWER API docs: https://power.larc.nasa.gov/docs/services/api/
+    Fetches climatological mean 2m temperature (°C) from NASA POWER API.
+    Batched by 0.5° grid tiles to minimise API calls.
+    No login required. Docs: https://power.larc.nasa.gov/docs/services/api/
     """
     cache = Path("data/interim/nasa_temperature_india.parquet")
     if cache.exists():
@@ -263,14 +350,13 @@ def fetch_nasa_temperature(grid_gdf: gpd.GeoDataFrame, batch_size: int = 200) ->
 
     logger.info("Fetching NASA POWER temperature (batching by 0.5° tiles) ...")
 
-    # Round to 0.5° resolution (POWER native) to deduplicate API calls
     grid_gdf = grid_gdf.copy()
     grid_gdf["lat_tile"] = (grid_gdf["latitude"]  / 0.5).round(0) * 0.5
     grid_gdf["lon_tile"] = (grid_gdf["longitude"] / 0.5).round(0) * 0.5
 
     tile_map = {}
     unique_tiles = grid_gdf[["lat_tile", "lon_tile"]].drop_duplicates()
-    logger.info(f"Unique 0.5° tiles: {len(unique_tiles)}")
+    logger.info(f"Unique 0.5° tiles to fetch: {len(unique_tiles)}")
 
     for _, tile in unique_tiles.iterrows():
         lat, lon = tile["lat_tile"], tile["lon_tile"]
@@ -290,9 +376,7 @@ def fetch_nasa_temperature(grid_gdf: gpd.GeoDataFrame, batch_size: int = 200) ->
             tile_map[key] = np.nan
         time.sleep(0.05)
 
-    grid_gdf["temp_key"] = list(
-        zip(grid_gdf["lat_tile"].round(1), grid_gdf["lon_tile"].round(1))
-    )
+    grid_gdf["temp_key"]    = list(zip(grid_gdf["lat_tile"].round(1), grid_gdf["lon_tile"].round(1)))
     grid_gdf["temperature"] = grid_gdf["temp_key"].map(tile_map)
 
     result = grid_gdf[["id", "temperature"]].copy()
@@ -307,13 +391,12 @@ def fetch_nasa_temperature(grid_gdf: gpd.GeoDataFrame, batch_size: int = 200) ->
 def collect_environment(grid_gdf: gpd.GeoDataFrame) -> pd.DataFrame:
     logger.info("=== LAYER 5: Environment / Risk ===")
 
-    stations = fetch_openaq_stations()
-    aq_df    = interpolate_aq_to_grid(grid_gdf, stations)
-
-    flood_risk   = compute_flood_risk(grid_gdf).reset_index(name="flood_risk_score")
-    quake_risk   = compute_earthquake_risk(grid_gdf).reset_index(name="earthquake_risk_score")
-    green_ratio  = compute_green_space_ratio(grid_gdf).reset_index(name="green_space_ratio")
-    temperature  = fetch_nasa_temperature(grid_gdf).reset_index(name="temperature")
+    stations    = fetch_openaq_stations()
+    aq_df       = interpolate_aq_to_grid(grid_gdf, stations)
+    flood_risk  = compute_flood_risk(grid_gdf).reset_index(name="flood_risk_score")
+    quake_risk  = compute_earthquake_risk(grid_gdf).reset_index(name="earthquake_risk_score")
+    green_ratio = compute_green_space_ratio(grid_gdf).reset_index(name="green_space_ratio")
+    temperature = fetch_nasa_temperature(grid_gdf).reset_index(name="temperature")
 
     result = (
         grid_gdf[["id"]]
@@ -336,3 +419,4 @@ if __name__ == "__main__":
     grid     = generate_h3_grid(boundary)
     env_df   = collect_environment(grid)
     print(env_df.head())
+    print(env_df[["flood_risk_score", "earthquake_risk_score", "aqi"]].describe())

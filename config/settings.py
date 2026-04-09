@@ -4,7 +4,9 @@ Each grid cell = 5 sq km (~2.24 km side length using H3 resolution 7)
 """
 
 # ─── Grid Settings ────────────────────────────────────────────────────────────
-H3_RESOLUTION = 7          # ~5.16 sq km per cell, closest to 5 sq km
+H3_RESOLUTION = 7          # ~5.16 sq km — closest H3 resolution to 4 sq km
+                           # H3 res 8 = 0.74 sq km (too fine); res 7 = 5.16 sq km (best match)
+                           # ~650,000 cells for all India
 INDIA_BBOX = {
     "min_lat": 6.5,
     "max_lat": 37.6,
@@ -26,11 +28,12 @@ SOURCES = {
         "district_csv": "data/raw/census/district_census_2011.csv",
         "notes": "Download Primary Census Abstract from censusindia.gov.in → Data Products → Primary Census Abstract"
     },
-    # WorldPop 100m grid (UN-adjusted, 2020)
+    # WorldPop 1km grid (UN-adjusted, 2020) — direct download, no login
+    # Full download URL: https://data.worldpop.org/GIS/Population_Density/Global_2000_2020_1km/2020/IND/ind_pd_2020_1km.tif
     "worldpop": {
-        "base_url": "https://data.worldpop.org/GIS/Population/Global_2000_2020_Constrained/2020/BSGM/IND/",
-        "filename": "ind_ppp_2020_UNadj_constrained.tif",
-        "resolution_m": 100,
+        "base_url": "https://data.worldpop.org/GIS/Population_Density/Global_2000_2020_1km/2020/IND/",
+        "filename": "ind_pd_2020_1km.tif",
+        "resolution_m": 1000,
     },
     # OpenStreetMap via Overpass API (free, live data)
     "osm_overpass": {
@@ -54,17 +57,14 @@ SOURCES = {
         "parameters": ["pm25", "pm10", "o3", "no2"],
         "api_key_env": "OPENAQ_API_KEY",   # free key at openaq.org
     },
-    # Bhoonidhi / ISRO BHUVAN (flood/earthquake risk, DEM, land use)
-    "bhuvan": {
-        "url": "https://bhuvan.nrsc.gov.in/bhuvan_links.php",
-        "wms_endpoint": "https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms",
-        "note": "Free registration required. Provides LULC 50K, flood hazard atlas.",
-    },
-    # National Disaster Management Authority (NDMA) flood/earthquake
-    "ndma": {
-        "earthquake_hazard": "https://ndma.gov.in/Resources/ndma-pdf/maps/Seismic_Zone.pdf",
-        "flood_atlas": "https://ndma.gov.in/Resources/ndma-pdf/maps/Flood_Hazard_Atlas.pdf",
-        "note": "Digitize zone maps or use BHUVAN raster layers for grid overlay.",
+    # GDACS — Global Disaster Alert & Coordination System (UN + European Commission)
+    # Replaces BHUVAN and GSI Bhukosh — no login, no file download, free REST API
+    # Covers: floods (FL), earthquakes (EQ), cyclones (TC), wildfires (WF), droughts (DR)
+    "gdacs": {
+        "endpoint": "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH",
+        "event_types": ["FL", "EQ"],   # flood + earthquake for risk scoring
+        "india_bbox":  "6.5,68.1,37.6,97.4",  # minlat,minlon,maxlat,maxlon
+        "note": "No API key needed. pip install gdacs-api",
     },
     # NASA POWER (temperature, climate)
     "nasa_power": {
