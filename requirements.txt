@@ -27,6 +27,7 @@ rasterstats>=0.20.0
 # Replaced with osmium (pyosmium) — has prebuilt Windows wheels on PyPI
 osmium>=3.7.0                  # pip install osmium  → works on Python 3.10-3.13
 osmnx>=2.0.0                   # road network graphs — prebuilt wheels
+gdacs-api>=0.1.4               # GDACS disaster events API — no login needed
 
 # ── Data processing ───────────────────────────────────────────────────────────
 pandas>=2.0.0
