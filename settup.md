@@ -1,3 +1,22 @@
+# SETTUP Guide
+
+This document contains end-to-end setup instructions for running the India Site Feasibility Scoring Pipeline from a fresh machine.
+
+## 1. Clone the Repository
+
+Replace the repository URL with your actual repo.
+
+### HTTPS
+
+```bash
+git clone https://github.com/code-YK/geo_site_data_collection.git
+cd geo_site_data_collection
+```
+
+### SSH
+
+```bash
+git clone git@github.com:code-YK/geo_site_data_collection.git
 # SETTUP Guide — India Site Feasibility Scoring Pipeline
 
 Complete setup instructions for a fresh machine.
